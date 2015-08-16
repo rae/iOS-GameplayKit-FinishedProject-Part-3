@@ -1,7 +1,7 @@
-### Tuts+ Tutorial: An Introduction to GameplayKit: Part 1
+### Tuts+ Tutorial: An Introduction to GameplayKit: Part 3
 
 #### Instructor: Davis Allie
 
-In this tutorial series you will learn about the GameplayKit framework added in iOS 9 and OS X El Capitan. In this first tutorial you will learn about Entity and Component based game model structure as well as State Machines.
+In this 3rd and final tutorial on the GameplayKit you will learn about Random Value Generators as well as Rule Systems. These functionalities will be utilised to create a more complex spawning behaviour as well as to introduce fuzzy logic.
 
-Starter project for the Tuts+ tutorial: [An Introduction to GameplayKit: Part 1](http://code.tutsplus.com/tutorials/an-introduction-to-gameplaykit-part-1--cms-24483)
+Finished project for the Tuts+ tutorial: [An Introduction to GameplayKit: Part 3](http://code.tutsplus.com/tutorials/an-introduction-to-gameplaykit-part-3--cms-24611)
