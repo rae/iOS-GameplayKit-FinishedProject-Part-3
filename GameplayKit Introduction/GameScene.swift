@@ -42,6 +42,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     var agents: [GKAgent2D] = []
     var lastUpdateTime: CFTimeInterval = 0.0
     
+    var initialSpawnDistribution = GKGaussianDistribution(randomSource: GKARC4RandomSource(), lowestValue: 0, highestValue: 2)
+    var respawnDistribution = GKShuffledDistribution(randomSource: GKARC4RandomSource(), lowestValue: 0, highestValue: 2)
+    
+    var ruleSystem = GKRuleSystem()
+    
     override func didMoveToView(view: SKView) {
         
         let obstacles = SKNode.obstaclesFromNodePhysicsBodies(self.children)
@@ -80,6 +85,49 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         playerNode.entity.addComponent(playerNode.agent)
         playerNode.agent.delegate = playerNode
+        
+        let playerDistanceRule = GKRule(blockPredicate: { (system: GKRuleSystem) -> Bool in
+            if let value = system.state["spawnPoint"] as? NSValue {
+                let point = value.CGPointValue()
+                
+                let xDistance = abs(point.x - self.playerNode.position.x)
+                let yDistance = abs(point.y - self.playerNode.position.y)
+                let totalDistance = sqrt((xDistance*xDistance) + (yDistance*yDistance))
+                
+                if totalDistance <= 200 {
+                    return true
+                } else {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }) { (system: GKRuleSystem) -> Void in
+            system.assertFact("spawnEnemy")
+        }
+
+        let nodeCountRule = GKRule(blockPredicate: { (system: GKRuleSystem) -> Bool in
+            if self.children.count <= 50 {
+                return true
+            } else {
+                return false
+            }
+        }) { (system: GKRuleSystem) -> Void in
+            system.assertFact("shouldSpawn", grade: 0.5)
+        }
+
+        let nodePresentRule = GKRule(blockPredicate: { (system: GKRuleSystem) -> Bool in
+            if let value = system.state["spawnPoint"] as? NSValue where self.nodesAtPoint(value.CGPointValue()).count == 0 {
+                return true
+            } else {
+                return false
+            }
+        }) { (system: GKRuleSystem) -> Void in
+            let grade = system.gradeForFact("shouldSpawn")
+            system.assertFact("shouldSpawn", grade: (grade + 0.5))
+        }
+
+        self.ruleSystem.addRulesFromArray([playerDistanceRule, nodeCountRule, nodePresentRule])
     }
    
     override func update(currentTime: CFTimeInterval) {
@@ -137,7 +185,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         self.graph.connectNodeUsingObstacles(endNode)
         
         for point in self.spawnPoints {
-            let respawnFactor = arc4random() % 3  //  Will produce a value between 0 and 2 (inclusive)
+            //let respawnFactor = arc4random() % 3  //  Will produce a value between 0 and 2 (inclusive)
+            let respawnFactor = self.initialSpawnDistribution.nextInt()
             
             var node: SKShapeNode? = nil
             
@@ -204,6 +253,78 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     
     func respawn() {
         
+        let endNode = GKGraphNode2D(point: float2(x: 2048.0, y: 2048.0))
+        self.graph.connectNodeUsingObstacles(endNode)
+        
+        for point in self.spawnPoints {
+            self.ruleSystem.reset()
+            self.ruleSystem.state["spawnPoint"] = NSValue(CGPoint: point)
+            self.ruleSystem.evaluate()
+            
+            if self.ruleSystem.gradeForFact("shouldSpawn") == 1.0 {
+                var respawnFactor = self.respawnDistribution.nextInt()
+                
+                if self.ruleSystem.gradeForFact("spawnEnemy") == 1.0 {
+                    respawnFactor = self.initialSpawnDistribution.nextInt()
+                }
+                
+                var node: SKShapeNode? = nil
+                
+                switch respawnFactor {
+                case 0:
+                    node = PointsNode(circleOfRadius: 25)
+                    node!.physicsBody = SKPhysicsBody(circleOfRadius: 25)
+                    node!.fillColor = UIColor.greenColor()
+                case 1:
+                    node = RedEnemyNode(circleOfRadius: 75)
+                    node!.physicsBody = SKPhysicsBody(circleOfRadius: 75)
+                    node!.fillColor = UIColor.redColor()
+                case 2:
+                    node = YellowEnemyNode(circleOfRadius: 50)
+                    node!.physicsBody = SKPhysicsBody(circleOfRadius: 50)
+                    node!.fillColor = UIColor.yellowColor()
+                default:
+                    break
+                }
+                
+                if let entity = node?.valueForKey("entity") as? GKEntity,
+                    let agent = node?.valueForKey("agent") as? GKAgent2D where respawnFactor != 0 {
+                        
+                    entity.addComponent(agent)
+                    agent.delegate = node as? ContactNode
+                    agent.position = float2(x: Float(point.x), y: Float(point.y))
+                    agents.append(agent)
+                    
+                    let startNode = GKGraphNode2D(point: agent.position)
+                    self.graph.connectNodeUsingObstacles(startNode)
+                    
+                    let pathNodes = self.graph.findPathFromNode(startNode, toNode: endNode) as! [GKGraphNode2D]
+                    
+                    if !pathNodes.isEmpty {
+                        let path = GKPath(graphNodes: pathNodes, radius: 1.0)
+                        
+                        let followPath = GKGoal(toFollowPath: path, maxPredictionTime: 1.0, forward: true)
+                        let stayOnPath = GKGoal(toStayOnPath: path, maxPredictionTime: 1.0)
+                        
+                        let behavior = GKBehavior(goals: [followPath, stayOnPath])
+                        agent.behavior = behavior
+                    }
+                    
+                    self.graph.removeNodes([startNode])
+                    
+                    agent.mass = 0.01
+                    agent.maxSpeed = 50
+                    agent.maxAcceleration = 1000
+                }
+                
+                node!.position = point
+                node!.strokeColor = UIColor.clearColor()
+                node!.physicsBody!.contactTestBitMask = 1
+                self.addChild(node!)
+            }
+        }
+        
+        self.graph.removeNodes([endNode])
     }
     
     //  MARK: Movement Methods
